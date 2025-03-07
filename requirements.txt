@@ -1,0 +1,6 @@
+streamlit>=1.28.0
+pandas>=1.5.0
+numpy>=1.23.0
+python-dateutil>=2.8.2
+# Comment out pyodbc if deploying to Streamlit Cloud, as it requires special handling
+# pyodbc>=4.0.34
