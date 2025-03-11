@@ -138,8 +138,16 @@ def process_json_to_csv(json_path, output_csv):
         if "PERCENTAGE" in col or "VTR" in col:
             # Convert percentage values to float with 2 decimal places
             df[col] = pd.to_numeric(df[col], errors='coerce').round(2)
+        elif col == "WATCH_TIME":
+            # Convert milliseconds to hours for WATCH_TIME
+            df[col] = pd.to_numeric(df[col], errors='coerce') / 3600000
+            df[col] = df[col].round(2)
+        elif col == "AVERAGE_WATCH_TIME":
+            # Convert milliseconds to minutes for AVERAGE_WATCH_TIME
+            df[col] = pd.to_numeric(df[col], errors='coerce') / 60000
+            df[col] = df[col].round(2)
         elif "TIME" in col and "MILLI" in col:
-            # Convert milliseconds to seconds for readability
+            # Convert other millisecond times to seconds
             df[col] = pd.to_numeric(df[col], errors='coerce') / 1000
             df[col] = df[col].round(1)
         else:
