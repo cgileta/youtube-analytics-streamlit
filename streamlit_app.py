@@ -15,6 +15,7 @@ import shutil
 st.set_page_config(page_title="YouTube Analytics Tools", layout="wide")
 
 # Define scripts with their required inputs and updated for file uploaders
+# Add the new script to the scripts dictionary in your streamlit_app.py file
 scripts = {
     "YouTube Retention Analysis": {
         "path": "scripts/merge_retention.py",
@@ -45,6 +46,16 @@ scripts = {
         "inputs": [
             {"name": "output_filename", "type": "text", "label": "Output Filename", 
              "default": f"youtube_metrics_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"}
+        ]
+    },
+    "First 24, 7, 28 Days JSON Parser": {
+        "path": "scripts/first_days_json_parser.py",
+        "description": "Extract metrics for the first 24 hours, 7 days, and 28 days from YouTube Analytics JSON files.",
+        "file_type": "json",
+        "multiple_files": False,
+        "inputs": [
+            {"name": "output", "type": "text", "label": "Output Filename", 
+             "default": f"first_days_metrics_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"}
         ]
     },
     "All Videos By Day": {
@@ -216,6 +227,60 @@ def run_youtube_json_processor(json_files, output_filename):
         
         # Check if output file was created
         output_file_path = os.path.join(temp_output_dir, output_filename)
+        if os.path.exists(output_file_path):
+            with open(output_file_path, 'rb') as f:
+                output_data = f.read()
+            return True, stdout, output_data
+        else:
+            return False, f"Script ran but no output file was created.\nStdout: {stdout}\nStderr: {stderr}", ""
+            
+    except Exception as e:
+        return False, f"Error running script: {str(e)}", ""
+    finally:
+        # Clean up temp directories
+        shutil.rmtree(temp_input_dir, ignore_errors=True)
+        shutil.rmtree(temp_output_dir, ignore_errors=True)
+
+# Function to run first_days_json_parser.py script with uploaded JSON file
+def run_first_days_parser(json_file, output_filename):
+    if not json_file:
+        return False, "No file uploaded", ""
+    
+    # Create temporary directories
+    temp_input_dir = tempfile.mkdtemp()
+    temp_output_dir = tempfile.mkdtemp()
+    
+    try:
+        # Save uploaded JSON file to temp directory
+        file_path = os.path.join(temp_input_dir, json_file.name)
+        with open(file_path, "wb") as f:
+            f.write(json_file.getbuffer())
+        
+        # Make sure output filename has .csv extension
+        if not output_filename.lower().endswith('.csv'):
+            output_filename += '.csv'
+        
+        output_file_path = os.path.join(temp_output_dir, output_filename)
+        
+        # Build command
+        cmd = [
+            sys.executable, 
+            "scripts/first_days_json_parser.py",
+            file_path,
+            f"--output={output_file_path}"
+        ]
+        
+        # Run the script
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            universal_newlines=True
+        )
+        stdout, stderr = process.communicate()
+        
+        # Check if output file was created
         if os.path.exists(output_file_path):
             with open(output_file_path, 'rb') as f:
                 output_data = f.read()
@@ -411,6 +476,14 @@ if script_name:
                         input_values.get('output_filename', '')
                     )
                 
+                elif script_name == "First 24, 7, 28 Days JSON Parser":
+                    # This script needs only a single JSON file, even if multiple were uploaded
+                    json_file = uploaded_files[0] if isinstance(uploaded_files, list) else uploaded_files
+                    success, output_text, output_data = run_first_days_parser(
+                        json_file,
+                        input_values.get('output', '')
+                    )
+                
                 elif script_name == "All Videos By Day":
                     success, output_text, output_data = run_videos_by_day(
                         input_values.get('filter_date', ''),
@@ -435,7 +508,7 @@ if script_name:
                         # Get output filename
                         output_filename = None
                         for input_def in script_info['inputs']:
-                            if input_def['name'] in ['output_path', 'output_filename']:
+                            if input_def['name'] in ['output_path', 'output_filename', 'output']:
                                 output_filename = input_values.get(input_def['name'], '')
                                 # Ensure .csv extension
                                 if output_filename and not output_filename.lower().endswith('.csv'):
