@@ -34,6 +34,23 @@ def extract_value_from_path(data, path):
     except (KeyError, IndexError, TypeError):
         return None
 
+def convert_timestamp_to_datetime(timestamp):
+    """
+    Convert a Unix timestamp to a readable datetime format (for Excel)
+    
+    Args:
+        timestamp (str or int): Unix timestamp in seconds
+        
+    Returns:
+        str: Formatted datetime string (YYYY-MM-DD HH:MM:SS)
+    """
+    try:
+        timestamp = int(timestamp)
+        dt = datetime.fromtimestamp(timestamp)
+        return dt.strftime('%Y-%m-%d %H:%M:%S')
+    except (ValueError, TypeError):
+        return None
+
 def process_json_to_csv(json_path, output_csv):
     """
     Process the JSON file and output a CSV with extracted metrics.
@@ -51,11 +68,34 @@ def process_json_to_csv(json_path, output_csv):
     videos_path = f"{base_path}.dimensionColumns[0].strings.values"
     
     # Get the list of videos
-    videos = extract_value_from_path(data, videos_path)
+    video_ids = extract_value_from_path(data, videos_path)
     
-    if not videos:
+    if not video_ids:
         print(f"Error: Could not extract videos from path {videos_path}")
         return False, "Could not extract videos from JSON"
+    
+    # Get video metadata (titles and publish dates)
+    video_metadata = {}
+    video_entities_path = "results[0].value.getCards.cards[0].sideEntities.videos"
+    video_entities = extract_value_from_path(data, video_entities_path)
+    
+    if video_entities:
+        for entity in video_entities:
+            try:
+                video_id = entity['entityData']['videoId']
+                title = entity['entityData']['title']
+                published_seconds = entity['entityData']['timePublishedSeconds']
+                published_date = convert_timestamp_to_datetime(published_seconds)
+                
+                video_metadata[video_id] = {
+                    'title': title,
+                    'published_date': published_date,
+                    'published_seconds': published_seconds
+                }
+            except (KeyError, TypeError) as e:
+                print(f"Warning: Could not extract metadata for a video: {e}")
+    else:
+        print("Warning: Could not find video metadata in the JSON")
     
     # Define all the metric paths and their names
     metric_paths = [
@@ -90,7 +130,7 @@ def process_json_to_csv(json_path, output_csv):
             metric_values.append(values)
         else:
             print(f"Warning: Could not extract values from path {path}")
-            metric_values.append([None] * len(videos))
+            metric_values.append([None] * len(video_ids))
     
     # Check if we have metrics data
     if not metric_values or len(metric_values) == 0:
@@ -113,7 +153,7 @@ def process_json_to_csv(json_path, output_csv):
     
     # Prepare CSV data
     csv_data = []
-    headers = ["VIDEO_ID", "TIME_PERIOD"]
+    headers = ["VIDEO_ID", "TITLE", "PUBLISHED_DATE", "TIME_PERIOD"]
     metric_headers = [name for _, name in metric_paths]
     
     # Use metric names from the JSON if available and not empty
@@ -124,8 +164,12 @@ def process_json_to_csv(json_path, output_csv):
     headers.extend(metric_headers)
     
     # For each video, create one row with its metrics
-    for i, video_id in enumerate(videos):
-        row = [video_id, time_period]
+    for i, video_id in enumerate(video_ids):
+        # Get video metadata
+        title = video_metadata.get(video_id, {}).get('title', '')
+        published_date = video_metadata.get(video_id, {}).get('published_date', '')
+        
+        row = [video_id, title, published_date, time_period]
         
         for metric_idx, metric in enumerate(metric_values):
             if i < len(metric):
@@ -139,7 +183,7 @@ def process_json_to_csv(json_path, output_csv):
     df = pd.DataFrame(csv_data, columns=headers)
     
     # Remove rows with all None metrics
-    metric_columns = df.columns[2:]  # All columns except VIDEO_ID and TIME_PERIOD
+    metric_columns = df.columns[4:]  # All columns except VIDEO_ID, TITLE, PUBLISHED_DATE, and TIME_PERIOD
     df = df.dropna(subset=metric_columns, how='all')
     
     # Convert metric values to appropriate types
@@ -167,7 +211,7 @@ def process_json_to_csv(json_path, output_csv):
     df.to_csv(output_csv, index=False)
     
     print(f"Successfully extracted data to {output_csv}")
-    print(f"Processed {len(videos)} videos with {len(metric_paths)} metrics each")
+    print(f"Processed {len(video_ids)} videos with {len(metric_paths)} metrics each")
     
     return True, f"Successfully extracted data for {len(df)} rows of metrics"
 
