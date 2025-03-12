@@ -36,7 +36,7 @@ def extract_value_from_path(data, path):
 
 def process_json_to_csv(json_path, output_csv):
     """
-    Process the JSON file and output a CSV with extracted metrics for first 24h, 7d, 28d.
+    Process the JSON file and output a CSV with extracted metrics.
     
     Args:
         json_path (str): Path to the input JSON file
@@ -92,13 +92,24 @@ def process_json_to_csv(json_path, output_csv):
             print(f"Warning: Could not extract values from path {path}")
             metric_values.append([None] * len(videos))
     
-    # Prepare data for first 24h, 7d, and 28d metrics
-    results_data = []
-    
     # Check if we have metrics data
     if not metric_values or len(metric_values) == 0:
         print("No metric values found in JSON")
         return False, "No metric values found in JSON"
+    
+    # Extract time period information from the configuration
+    config_path = "results[0].value.getCards.cards[0].config.scatterplotDataConfig.timePeriod"
+    time_period_config = extract_value_from_path(data, config_path)
+    
+    time_period = "24h"  # Default value
+    if time_period_config:
+        count = time_period_config.get('count', 1)
+        if count == 1:
+            time_period = "24h"
+        elif count == 7:
+            time_period = "7d"
+        elif count == 28:
+            time_period = "28d"
     
     # Prepare CSV data
     csv_data = []
@@ -112,19 +123,17 @@ def process_json_to_csv(json_path, output_csv):
     # Complete headers list
     headers.extend(metric_headers)
     
-    time_periods = ['24h', '7d', '28d']
-    
+    # For each video, create one row with its metrics
     for i, video_id in enumerate(videos):
-        for period_idx, period in enumerate(time_periods):
-            # Make sure we have enough data points for this period
-            if i + period_idx < len(videos):
-                row = [video_id, period]
-                for metric_idx, metric in enumerate(metric_values):
-                    if i + period_idx < len(metric):
-                        row.append(metric[i + period_idx])
-                    else:
-                        row.append(None)
-                csv_data.append(row)
+        row = [video_id, time_period]
+        
+        for metric_idx, metric in enumerate(metric_values):
+            if i < len(metric):
+                row.append(metric[i])
+            else:
+                row.append(None)
+        
+        csv_data.append(row)
     
     # Create DataFrame for easier manipulation
     df = pd.DataFrame(csv_data, columns=headers)
@@ -160,10 +169,10 @@ def process_json_to_csv(json_path, output_csv):
     print(f"Successfully extracted data to {output_csv}")
     print(f"Processed {len(videos)} videos with {len(metric_paths)} metrics each")
     
-    return True, f"Successfully extracted data for {len(df)} metrics across {len(df['VIDEO_ID'].unique())} videos"
+    return True, f"Successfully extracted data for {len(df)} rows of metrics"
 
 def main():
-    parser = argparse.ArgumentParser(description='Extract first 24h, 7d, 28d metrics from JSON to CSV')
+    parser = argparse.ArgumentParser(description='Extract metrics from YouTube Studio JSON to CSV')
     parser.add_argument('json_path', help='Path to the input JSON file')
     parser.add_argument('--output', '-o', help='Path to the output CSV file', default=None)
     
@@ -172,7 +181,7 @@ def main():
     # If output path is not specified, create one based on the input file
     if not args.output:
         base_name = os.path.splitext(os.path.basename(args.json_path))[0]
-        args.output = f"{base_name}_first_days_metrics.csv"
+        args.output = f"{base_name}_metrics.csv"
     
     success, message = process_json_to_csv(args.json_path, args.output)
     if success:
