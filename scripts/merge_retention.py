@@ -5,6 +5,30 @@ import re
 import datetime
 from pathlib import Path
 import argparse
+import unicodedata
+
+def normalize_text(text):
+    """
+    Normalize text to handle special characters correctly.
+    
+    Args:
+    text (str): The text to normalize
+    
+    Returns:
+    str: Normalized text
+    """
+    if not isinstance(text, str):
+        return text
+    
+    # Normalize unicode characters
+    normalized = unicodedata.normalize('NFKD', text)
+    
+    # Handle common special characters that might cause issues
+    normalized = normalized.replace("'", "'")  # Replace fancy apostrophes
+    normalized = normalized.replace(""", "\"").replace(""", "\"")  # Replace fancy quotes
+    normalized = normalized.replace("–", "-").replace("—", "-")  # Replace dashes
+    
+    return normalized
 
 def process_directory(directory, output_dir=None, output_filename=None):
     """
@@ -67,8 +91,6 @@ def process_directory(directory, output_dir=None, output_filename=None):
             except ValueError as e:
                 sub_nonsub_pivot = None
                 print(f"Error pivoting subscribers data for {filename}: {e}")
-
-            # Replace the existing "New and returning viewers" handling code block with this improved version
 
             try:
                 # First, check if we have the expected columns
@@ -150,7 +172,6 @@ def process_directory(directory, output_dir=None, output_filename=None):
                 print(f"  - DataFrame columns: {new_return_df.columns.tolist()}")
                 print(f"  - First few rows: {new_return_df.head(2).to_dict('records')}")
            
-
             try:
                 # Merge the two dataframes based on a common column
                 merged_temp_df = pd.merge(organic_df, detailed_df, on="Video position (%)")
@@ -188,7 +209,20 @@ def process_directory(directory, output_dir=None, output_filename=None):
     try:
         if not merged_df.empty:
             pattern = r"Audience retention (\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2}) (.+?)\.zip"
-            merged_df['Start Date'], merged_df['End Date'], merged_df['Video Title'] = zip(*merged_df['zipfilename'].apply(lambda x: re.match(pattern, x).groups() if re.match(pattern, x) else ('Unknown', 'Unknown', 'Unknown')))
+            
+            # Create a function to extract and normalize the components
+            def extract_components(filename):
+                match = re.match(pattern, filename)
+                if match:
+                    start_date, end_date, title = match.groups()
+                    # Normalize the title to handle special characters
+                    title = normalize_text(title)
+                    return (start_date, end_date, title)
+                return ('Unknown', 'Unknown', 'Unknown')
+            
+            # Apply the function to extract and normalize the components
+            components = merged_df['zipfilename'].apply(extract_components)
+            merged_df['Start Date'], merged_df['End Date'], merged_df['Video Title'] = zip(*components)
     except AttributeError as e:
         print(f"Error parsing 'zipfilename': {e}")
 
@@ -211,7 +245,9 @@ def process_directory(directory, output_dir=None, output_filename=None):
         try:
             # Ensure output directory exists
             os.makedirs(output_dir, exist_ok=True)
-            merged_df.to_csv(output_path, index=False)
+            
+            # Save with UTF-8 encoding and BOM to help Excel recognize the encoding
+            merged_df.to_csv(output_path, index=False, encoding='utf-8-sig')
             print(f"Successfully saved data to: {output_path}")
         except Exception as e:
             print(f"Error saving CSV file: {str(e)}")
